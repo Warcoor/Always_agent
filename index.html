@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>ИИ-Агент Управления ПК</title>
+<style>
+    * { box-sizing: border-box; }
+
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #1e1e2e; color: #cdd6f4; margin: 0; padding: 20px; display: flex; flex-direction: column; height: 100vh; }
+    .config-area { display: flex; flex-direction: column; gap: 10px; margin-bottom: 15px; background: #252538; padding: 10px; border-radius: 8px; border: 1px solid #45475a; max-height: 55vh; overflow-y: auto; }
+    .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    input[type="password"], input[type="text"], select { padding: 7px 8px; border-radius: 6px; border: 1px solid #45475a; background: #313244; color: #cdd6f4; font-family: inherit; font-size: 13.5px; }
+    select { min-width: 190px; }
+    .btn { padding: 8px 16px; border-radius: 6px; border: none; background: #b4befe; color: #11111b; font-weight: bold; cursor: pointer; }
+    .btn.ghost { background: #313244; color: #cdd6f4; border: 1px solid #45475a; }
+    label.check { display: flex; align-items: center; gap: 6px; font-size: 14px; white-space: nowrap; cursor: pointer; }
+    #activeModel { font-size: 13px; color: #a6adc8; margin-left: auto; }
+
+    #modelPanel { display: none; border-top: 1px solid #45475a; padding-top: 10px; }
+    #modelPanel.open { display: block; }
+    .hint { font-size: 12.5px; color: #a6adc8; margin: 0 0 8px; line-height: 1.4; }
+    .model-card { border: 1px solid #45475a; border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; background: #2b2b40; }
+    .model-card.primary { border-color: #a6e3a1; }
+    .model-top { display: flex; align-items: center; gap: 8px; }
+    .model-top .name { flex: 1; font-family: Consolas, monospace; font-size: 13.5px; word-break: break-all; }
+    .model-bottom { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+    .model-bottom .key { flex: 1; min-width: 180px; }
+    .model-bottom .url { flex-basis: 100%; }
+    .nokey { border-color: #f38ba8 !important; }
+    .icon-btn { background: #313244; border: 1px solid #45475a; color: #cdd6f4; border-radius: 5px; width: 28px; height: 28px; cursor: pointer; }
+    .icon-btn:hover { background: #45475a; }
+    .add-box { border: 1px dashed #585b70; border-radius: 8px; padding: 8px 10px; }
+    .add-box .row { margin-top: 6px; }
+    .add-box input[type="text"] { flex: 1; min-width: 160px; }
+
+    #chat { flex: 1; border: 1px solid #45475a; border-radius: 8px; padding: 15px; overflow-y: auto; background: #11111b; margin-bottom: 12px; display: flex; flex-direction: column; gap: 10px; min-height: 120px; }
+    .msg { padding: 10px 14px; border-radius: 8px; max-width: 85%; width: fit-content; line-height: 1.4; word-break: break-word; white-space: pre-wrap; }
+    .user { background: #89b4fa; color: #11111b; align-self: flex-end; }
+    .ai { background: #313244; color: #cdd6f4; align-self: flex-start; border-left: 4px solid #cba6f7; }
+    .cmd { background: #fab387; color: #11111b; align-self: flex-start; font-family: monospace; font-size: 14px; border-left: 4px solid #f38ba8; }
+    .sys { background: #45475a; color: #a6e3a1; align-self: flex-start; font-family: monospace; font-size: 13px; max-width: 95%; }
+
+    #confirmBar { display: none; margin-bottom: 12px; background: #3a2f2a; border: 1px solid #fab387; border-radius: 8px; padding: 10px 12px; }
+    #confirmBar.open { display: block; }
+    #confirmText { font-family: monospace; font-size: 13px; white-space: pre-wrap; word-break: break-word; margin: 0 0 8px; max-height: 120px; overflow-y: auto; }
+    #confirmBar .btn.ok { background: #a6e3a1; }
+    #confirmBar .btn.no { background: #f38ba8; margin-left: 8px; }
+
+    .input-area { display: flex; gap: 10px; }
+    #taskInput { flex: 1; padding: 14px; border-radius: 8px; border: 1px solid #45475a; background: #313244; color: #cdd6f4; font-size: 16px; }
+    #sendBtn { padding: 14px 28px; border-radius: 8px; border: none; background: #a6e3a1; color: #11111b; font-weight: bold; cursor: pointer; font-size: 16px; min-width: 150px; }
+    #sendBtn.running { background: #f38ba8; }
+    #sendBtn.stopping { background: #585b70; color: #cdd6f4; cursor: wait; }
+    :focus-visible { outline: 2px solid #b4befe; outline-offset: 2px; }
+</style>
+</head>
+<body>
+    <div class="config-area">
+        <div class="row">
+            <select id="modelSelect" title="Основная модель"></select>
+            <button class="btn ghost" id="modelsBtn">⚙ Модели и ключи</button>
+            <label class="check"><input type="checkbox" id="confirmCheck" checked> Подтверждать команды</label>
+            <label class="check" title="Ping, curl, nslookup, tracert, загрузка страниц и т.д."><input type="checkbox" id="networkCheck"> Сетевые инструменты</label>
+            <span id="activeModel"></span>
+        </div>
+        <div id="modelPanel">
+            <p class="hint">У каждой модели свой провайдер и API-ключ. Верхняя в списке приоритетнее. Если основная модель перегружена или недоступна, агент переключится на следующую с галочкой «резерв» и заполненным ключом.</p>
+            <div id="modelList"></div>
+            <div class="add-box">
+                <div class="hint" style="margin:0">Добавить модель</div>
+                <div class="row">
+                    <input type="text" id="newName" placeholder="Название, например deepseek-chat">
+                    <select id="newProvider"></select>
+                </div>
+                <div class="row">
+                    <input type="password" id="newKey" placeholder="API-ключ" style="flex:1">
+                    <input type="text" id="newUrl" placeholder="Base URL" style="flex:1; display:none">
+                    <button class="btn" id="addModelBtn">Добавить</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="chat">
+        <div class="msg ai">Привет! Я ваш автономный ИИ-агент с доступом к CMD Windows. Напишите задачу (например: "Создай папку Тест на рабочем столе").</div>
+    </div>
+
+    <div id="confirmBar">
+        <div style="margin-bottom:6px">Выполнить?</div>
+        <pre id="confirmText"></pre>
+        <button class="btn ok" id="confirmYes">Выполнить</button>
+        <button class="btn no" id="confirmNo">Отклонить</button>
+    </div>
+
+    <div class="input-area">
+        <input type="text" id="taskInput" placeholder="Что сделать на компьютере?...">
+        <button id="sendBtn">Запустить</button>
+    </div>
+
+<script>
+    const PRESETS = [
+        { id: 'gemini',     label: 'Google Gemini', url: 'https://generativelanguage.googleapis.com/v1beta/openai/' },
+        { id: 'deepseek',   label: 'DeepSeek',      url: 'https://api.deepseek.com' },
+        { id: 'openrouter', label: 'OpenRouter',    url: 'https://openrouter.ai/api/v1' },
+        { id: 'openai',     label: 'OpenAI',        url: 'https://api.openai.com/v1' },
+        { id: 'custom',     label: 'Другой (свой URL)', url: '' },
+    ];
+    const presetByUrl = url => PRESETS.find(p => p.url && p.url === url) || PRESETS[PRESETS.length - 1];
+
+    const chat = document.getElementById('chat');
+    const taskInput = document.getElementById('taskInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const confirmCheck = document.getElementById('confirmCheck');
+    const networkCheck = document.getElementById('networkCheck');
+    const modelSelect = document.getElementById('modelSelect');
+    const modelList = document.getElementById('modelList');
+    const modelPanel = document.getElementById('modelPanel');
+    const activeModel = document.getElementById('activeModel');
+    const confirmBar = document.getElementById('confirmBar');
+    const newProvider = document.getElementById('newProvider');
+    const newUrl = document.getElementById('newUrl');
+
+    let models = [];      // [{name, enabled, base_url, api_key}]
+    let selected = '';
+    let state = 'idle';   // idle | running | stopping
+    let stopTimer = null;
+
+    function logFromPython(text, type) {
+        const msg = document.createElement('div');
+        msg.className = `msg ${type}`;
+        msg.textContent = text;
+        chat.appendChild(msg);
+        chat.scrollTop = chat.scrollHeight;
+    }
+    function setActiveModel(name) { activeModel.textContent = 'Отвечает: ' + name; }
+
+    /* ---------- подтверждение ---------- */
+    function askConfirm(text) {
+        document.getElementById('confirmText').textContent = text;
+        confirmBar.classList.add('open');
+        chat.scrollTop = chat.scrollHeight;
+    }
+    function closeConfirm() { confirmBar.classList.remove('open'); }
+    function answer(ok) { closeConfirm(); window.pywebview.api.answer_confirm(ok); }
+    document.getElementById('confirmYes').onclick = () => answer(true);
+    document.getElementById('confirmNo').onclick = () => answer(false);
+
+    /* ---------- состояние кнопки ---------- */
+    function setState(next) {
+        state = next;
+        sendBtn.classList.toggle('running', next === 'running');
+        sendBtn.classList.toggle('stopping', next === 'stopping');
+        sendBtn.textContent = next === 'idle' ? 'Запустить' : next === 'running' ? 'Стоп' : 'Останавливаю...';
+        if (next === 'idle') { closeConfirm(); clearTimeout(stopTimer); taskInput.focus(); }
+    }
+    function taskFinished() { setState('idle'); }
+
+    /* ---------- конфиг ---------- */
+    function persist() {
+        return window.pywebview.api.save_config({
+            models, selected,
+            network: networkCheck.checked,
+            confirm: confirmCheck.checked,
+        });
+    }
+
+    function fillProviderSelect(sel) {
+        PRESETS.forEach(p => {
+            const o = document.createElement('option');
+            o.value = p.id; o.textContent = p.label; sel.appendChild(o);
+        });
+    }
+    fillProviderSelect(newProvider);
+    newProvider.addEventListener('change', () => {
+        newUrl.style.display = newProvider.value === 'custom' ? '' : 'none';
+    });
+
+    function keyFromSameProvider(url, exceptName) {
+        const m = models.find(x => x.base_url === url && x.api_key && x.name !== exceptName);
+        return m ? m.api_key : '';
+    }
+
+    function renderModels() {
+        modelSelect.innerHTML = '';
+        models.forEach(m => {
+            const o = document.createElement('option');
+            o.value = m.name; o.textContent = m.name;
+            modelSelect.appendChild(o);
+        });
+        modelSelect.value = selected;
+
+        modelList.innerHTML = '';
+        models.forEach((m, i) => {
+            const isPrimary = m.name === selected;
+            const card = document.createElement('div');
+            card.className = 'model-card' + (isPrimary ? ' primary' : '');
+
+            const top = document.createElement('div');
+            top.className = 'model-top';
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.checked = m.enabled || isPrimary;
+            cb.disabled = isPrimary;
+            cb.title = 'Использовать как резервную';
+            cb.onchange = () => { m.enabled = cb.checked; persist(); };
+            const name = document.createElement('span');
+            name.className = 'name';
+            name.textContent = m.name + (isPrimary ? '  (основная)' : '');
+            const mk = (label, title, fn) => {
+                const b = document.createElement('button');
+                b.className = 'icon-btn'; b.textContent = label; b.title = title; b.onclick = fn;
+                return b;
+            };
+            top.append(cb, name,
+                mk('↑', 'Выше', () => move(i, -1)),
+                mk('↓', 'Ниже', () => move(i, 1)),
+                mk('✕', 'Удалить', () => removeModel(i)));
+
+            const bottom = document.createElement('div');
+            bottom.className = 'model-bottom';
+
+            const prov = document.createElement('select');
+            fillProviderSelect(prov);
+            const current = presetByUrl(m.base_url);
+            prov.value = current.id;
+
+            const key = document.createElement('input');
+            key.type = 'password';
+            key.className = 'key' + (m.api_key ? '' : ' nokey');
+            key.placeholder = 'API-ключ';
+            key.value = m.api_key || '';
+            key.onchange = () => { m.api_key = key.value.trim(); key.classList.toggle('nokey', !m.api_key); persist(); };
+
+            const url = document.createElement('input');
+            url.type = 'text';
+            url.className = 'url';
+            url.placeholder = 'Base URL (OpenAI-совместимый)';
+            url.value = m.base_url;
+            url.style.display = current.id === 'custom' ? '' : 'none';
+            url.onchange = () => { m.base_url = url.value.trim(); persist(); };
+
+            prov.onchange = () => {
+                const p = PRESETS.find(x => x.id === prov.value);
+                if (p.url) { m.base_url = p.url; if (!m.api_key) m.api_key = keyFromSameProvider(p.url, m.name); }
+                else { m.base_url = ''; }
+                persist(); renderModels();
+            };
+
+            bottom.append(prov, key, url);
+            card.append(top, bottom);
+            modelList.appendChild(card);
+        });
+    }
+
+    function move(i, d) {
+        const j = i + d;
+        if (j < 0 || j >= models.length) return;
+        [models[i], models[j]] = [models[j], models[i]];
+        renderModels(); persist();
+    }
+    function removeModel(i) {
+        if (models.length <= 1) return;
+        const [gone] = models.splice(i, 1);
+        if (gone.name === selected) selected = models[0].name;
+        renderModels(); persist();
+    }
+    function addModel() {
+        const name = document.getElementById('newName').value.trim().replace(/^models\//, '');
+        if (!name || models.some(m => m.name === name)) return;
+        const p = PRESETS.find(x => x.id === newProvider.value);
+        const base_url = p.url || newUrl.value.trim();
+        if (!base_url) { alert('Укажите Base URL.'); return; }
+        let api_key = document.getElementById('newKey').value.trim();
+        if (!api_key) api_key = keyFromSameProvider(base_url, name);
+        models.push({ name, enabled: true, base_url, api_key });
+        document.getElementById('newName').value = '';
+        document.getElementById('newKey').value = '';
+        renderModels(); persist();
+    }
+
+    /* ---------- запуск / стоп ---------- */
+    async function sendTask() {
+        if (state === 'running') {
+            setState('stopping');
+            window.pywebview.api.stop_agent();
+            // страховка: если Python по какой-то причине не ответил, разблокируем кнопку
+            stopTimer = setTimeout(() => setState('idle'), 4000);
+            return;
+        }
+        if (state !== 'idle') return;
+
+        const task = taskInput.value.trim();
+        if (!task) return;
+        const sel = models.find(m => m.name === selected);
+        if (!models.some(m => m.api_key)) {
+            modelPanel.classList.add('open');
+            alert('Сначала укажите API-ключ хотя бы для одной модели.');
+            return;
+        }
+        logFromPython(task, 'user');
+        taskInput.value = '';
+        setState('running');
+        try {
+            await persist();
+            await window.pywebview.api.start_agent_task(task);
+        } catch (err) {
+            logFromPython('Критическая ошибка: ' + err, 'ai');
+            setState('idle');
+        }
+    }
+
+    document.getElementById('modelsBtn').addEventListener('click', () => modelPanel.classList.toggle('open'));
+    document.getElementById('addModelBtn').addEventListener('click', addModel);
+    modelSelect.addEventListener('change', () => { selected = modelSelect.value; renderModels(); persist(); });
+    confirmCheck.addEventListener('change', persist);
+    networkCheck.addEventListener('change', persist);
+    sendBtn.addEventListener('click', sendTask);
+    taskInput.addEventListener('keydown', e => { if (e.key === 'Enter') sendTask(); });
+
+    window.addEventListener('pywebviewready', async () => {
+        const cfg = await window.pywebview.api.get_config();
+        models = cfg.models;
+        selected = cfg.selected;
+        confirmCheck.checked = cfg.confirm;
+        networkCheck.checked = cfg.network;
+        renderModels();
+        if (!models.some(m => m.api_key)) modelPanel.classList.add('open');
+    });
+</script>
+</body>
+</html>
